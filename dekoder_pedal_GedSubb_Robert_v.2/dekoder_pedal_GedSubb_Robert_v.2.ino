@@ -1,0 +1,149 @@
+// Tested Arduino Mega
+//Author Romuald Milewski
+// Dual dekoder for Pedal and Registry for pipe organ
+// Arduino Mega and Mega2560
+
+#include <MIDI.h>
+
+#define decoder_channel 1
+#define decoder_channel2 1
+#define decoder_channel_registry 6
+
+const int channel1_enable_pin = 50; // piny włączające register
+const int channel2_enable_pin = 51;
+
+int pins[] = {A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31};
+int pins_reg[] = {48, 52, 53, 54};
+
+bool noteActiveCh1[128] = {false};
+bool noteActiveCh2[128] = {false};
+uint8_t pinUsage[128] = {0};  // Liczba kanałów trzymających dany pin
+
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+void setup() {
+  for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+    pinMode(pins[i], OUTPUT);
+    digitalWrite(pins[i], LOW);
+  }
+  for (int i = 0; i < sizeof(pins_reg) / sizeof(pins_reg[0]); ++i) {
+    pinMode(pins_reg[i], OUTPUT);
+    digitalWrite(pins_reg[i], LOW);
+  }
+
+  pinMode(channel1_enable_pin, INPUT_PULLUP);
+  pinMode(channel2_enable_pin, INPUT_PULLUP);
+
+  MIDI.begin(MIDI_CHANNEL_OMNI);
+  MIDI.setHandleNoteOn(MyHandleNoteOn);
+  MIDI.setHandleNoteOff(MyHandleNoteOff);
+}
+
+void loop() {
+  MIDI.read();
+  updateChannelState();
+}
+
+void updateChannelState() {
+  static bool lastCh1State = HIGH;
+  static bool lastCh2State = HIGH;
+
+  bool ch1State = digitalRead(channel1_enable_pin);
+  bool ch2State = digitalRead(channel2_enable_pin);
+
+  if (ch1State != lastCh1State) {
+    lastCh1State = ch1State;
+    for (byte note = 36; note <= 127; ++note) {
+      int index = note - 36;
+      if (index < sizeof(pins) / sizeof(pins[0]) && noteActiveCh1[note]) {
+        int pin = pins[index];
+        if (ch1State == LOW) {
+          pinUsage[pin]++;
+          digitalWrite(pin, HIGH);
+        } else {
+          if (pinUsage[pin] > 0) pinUsage[pin]--;
+          if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+        }
+      }
+    }
+  }
+
+  if (ch2State != lastCh2State) {
+    lastCh2State = ch2State;
+    for (byte note = 36; note <= 127; ++note) {
+      int index = note - 36 + 12;
+      if (index < sizeof(pins) / sizeof(pins[0]) && noteActiveCh2[note]) {
+        int pin = pins[index];
+        if (ch2State == LOW) {
+          pinUsage[pin]++;
+          digitalWrite(pin, HIGH);
+        } else {
+          if (pinUsage[pin] > 0) pinUsage[pin]--;
+          if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+        }
+      }
+    }
+  }
+}
+
+void MyHandleNoteOn(byte channel, byte pitch, byte velocity) {
+  if (channel == decoder_channel) {
+    int index = pitch - 36;
+    if (index >= 0 && index < sizeof(pins) / sizeof(pins[0])) {
+      noteActiveCh1[pitch] = true;
+      if (digitalRead(channel1_enable_pin) == LOW) {
+        int pin = pins[index];
+        pinUsage[pin]++;
+        digitalWrite(pin, HIGH);
+      }
+    }
+  }
+
+  if (channel == decoder_channel2) {
+    int index = pitch - 36 + 12;
+    if (index >= 0 && index < sizeof(pins) / sizeof(pins[0])) {
+      noteActiveCh2[pitch] = true;
+      if (digitalRead(channel2_enable_pin) == LOW) {
+        int pin = pins[index];
+        pinUsage[pin]++;
+        digitalWrite(pin, HIGH);
+      }
+    }
+  }
+
+  if (channel == decoder_channel_registry) {
+    int index = pitch - 36;
+    if (index >= 0 && index < sizeof(pins_reg) / sizeof(pins_reg[0])) {
+      digitalWrite(pins_reg[index], HIGH);
+    }
+  }
+}
+
+void MyHandleNoteOff(byte channel, byte pitch, byte velocity) {
+  if (channel == decoder_channel) {
+    int index = pitch - 36;
+    if (index >= 0 && index < sizeof(pins) / sizeof(pins[0])) {
+      noteActiveCh1[pitch] = false;
+      int pin = pins[index];
+      if (pinUsage[pin] > 0) pinUsage[pin]--;
+      if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+    }
+  }
+
+  if (channel == decoder_channel2) {
+    int index = pitch - 36 + 12;
+    if (index >= 0 && index < sizeof(pins) / sizeof(pins[0])) {
+      noteActiveCh2[pitch] = false;
+      int pin = pins[index];
+      if (pinUsage[pin] > 0) pinUsage[pin]--;
+      if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+    }
+  }
+
+  if (channel == decoder_channel_registry) {
+    int index = pitch - 36;
+    if (index >= 0 && index < sizeof(pins_reg) / sizeof(pins_reg[0])) {
+      digitalWrite(pins_reg[index], LOW);
+    }
+  }
+}
