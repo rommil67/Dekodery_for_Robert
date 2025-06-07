@@ -1,20 +1,31 @@
 //Author Romuald Milewski
 // Dekoder for Pedal or Registry and Registers Leds and Pistons Leds for pipe organ
+// DEKODER WŁĄCZAJĄCY Leds pod registrami Ledy pod pistonami i sterujący modułem octawcoppel
 // Arduino Mega and Mega2560
 #include <MIDI.h>   // Add Midi Library
  
 //#define LED 13 
 //#define LED2 12// Arduino Board LED is on Pin 13
+// kolejnośc reg coppel
+
+#define I_P 7
+#define II_P 8
+#define II_I 18
+#define super_II_I 19
+#define super_I 20
+
 
 #define decoder_channel 1 // the selected MIDI channel on which the decoder works
 #define decoder_channel_registry 1 // the selected MIDI channel on which the decoder works
 #define decoder_channel_Pistons 13 // the selected MIDI channel on which the decoder works
  
-int pins[] = {30, 31, 28, 29, 26, 27, 24, 25, 22, 23, 20, 21, 18, 19, 16, 17, 14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3};        
+int pins[] = {30, 31, 28, 29, 26, 27, 24, 25, 22, 23, 20, 21, 18, 19, 16, 17, 14, 15, 12, 13, 10, 11, 8, 9, 6, 7, 4, 5, 2, 3}; // te piny zapalają LEDy pod registrmi       
 
-int pins_reg[] = {36, 37, 34, 35, 32, 33,   A14, A15, A12, A13, A10, A11, A8, A9, A6, A7, A4, A5, A2, A3, A0, A1};
+int pins_reg[] = {36, 37, 34, 35, 32, 33,  A11, A8, A9, A6, A7, A4, A5, A2, A3, A0, A1};// piny nieużywane
 
-int pins_Pistons[] = {46, 47, 44, 45, 42, 43, 40, 41, 38, 39};           
+int pins_coppel[] = {A14, A15, A12, A13, A10};// piny włączające połączenia w module octawkoppel (nano)
+
+int pins_Pistons[] = {46, 47, 44, 45, 42, 43, 40, 41, 38, 39}; // te piny zapalają Lampkę pod pistonem w kolejności od 0 do 8, a  następnie cresc    (39) 
 
 int pitch_store = 84;
 int end_pin = 0;
@@ -38,6 +49,13 @@ void setup() {
   for (int i = 0; i < sizeof(pins_reg) / sizeof(pins_reg[0]); ++i) {
     pinMode(pins_reg[i], OUTPUT);
     digitalWrite (pins_reg[i], LOW);    
+    
+  }
+
+     // setup pins_reg for output ( Registry in pedal )
+  for (int i = 0; i < sizeof(pins_reg) / sizeof(pins_coppel[0]); ++i) {
+    pinMode(pins_coppel[i], OUTPUT);
+    digitalWrite (pins_coppel[i], HIGH);    
     
   }
 
@@ -143,7 +161,22 @@ if (channel == decoder_channel_Pistons) {
            
        
    }      
-
+   // skcja włącznia coppel
+  if (pitch == 36 + I_P -1){ 
+    digitalWrite (pins_coppel[0], LOW);
+  }
+  if (pitch == 36 + II_P -1){ 
+    digitalWrite (pins_coppel[1], LOW);
+  }
+  if (pitch == 36 + II_I -1){ 
+    digitalWrite (pins_coppel[2], LOW);
+  }
+  if (pitch == 36 + super_II_I -1){ 
+    digitalWrite (pins_coppel[3], LOW);
+  }
+  if (pitch == 36 + super_I -1){ 
+    digitalWrite (pins_coppel[4], LOW);
+  }
 /* W TEJ WERSJI TĘ SEKSCJĘ KODU ZAKOMENTOWANO --------------------------------------------------
 // obsługa Anuluj Crescendo (A)
    
@@ -262,4 +295,20 @@ void MyHandleNoteOff(byte channel, byte pitch, byte velocity) {
      }
   }
  } 
+ // skcja wyłącznia coppel
+  if (pitch == 36 + I_P -1){ 
+    digitalWrite (pins_coppel[0], HIGH);
+  }
+  if (pitch == 36 + II_P -1){ 
+    digitalWrite (pins_coppel[1], HIGH);
+  }
+  if (pitch == 36 + II_I -1){ 
+    digitalWrite (pins_coppel[2], HIGH);
+  }
+  if (pitch == 36 + super_II_I -1){ 
+    digitalWrite (pins_coppel[3], HIGH);
+  }
+  if (pitch == 36 + super_I -1){ 
+    digitalWrite (pins_coppel[4], HIGH);
+  }
 }  
