@@ -1,0 +1,167 @@
+// Dual (triple) dekoder dla głosu dzielonego między pedał a manuał
+// w organach piszczałkowych
+// Arduino Mega i Mega2560
+// Author: Romuald Milewski
+
+
+#include <MIDI.h> // Biblioteka do obsługi MIDI
+
+// Definicje kanałów MIDI do dekodowania
+#define decoder_channel       1  // Kanał główny - Trompet 8' man I
+#define decoder_channel2      3  // Drugi kanał  - Puzon 16 - ped.
+#define decoder_channel3      3  // Trzeci kanał  - Trompet 8' - ped.
+
+// Definicje transpozycji dla poszczególnych kanałów
+#define CHANNEL1_TRANSPOSE   0    // bez transpozycji
+#define CHANNEL2_TRANSPOSE -12    // oktawa w dół
+#define CHANNEL3_TRANSPOSE   0    // bez transpozycji ( oktawa w górę to plus 12)
+
+// Piny aktywujące kanały (wejścia cyfrowe z pull-up)
+const int channel1_enable_pin = 50; // piny enable 
+const int channel2_enable_pin = 51;
+const int channel3_enable_pin = 52;  // nowy pin enable dla kanału 3
+
+// Tablica pinów wyjściowych do sterowania zaworami (nutami)
+int pins[] = {
+  A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15,
+  32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+   2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17,
+  18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+};
+
+// Licznik użycia każdego pinu (zabezpieczenie przed zgaszeniem pinów używanych przez więcej niż 1 kanał)
+#define MAX_PIN 54
+uint8_t pinUsage[MAX_PIN + 1] = {0};
+
+// Tablice śledzące aktywność nut na kanałach
+bool noteActiveCh1[128] = {false};
+bool noteActiveCh2[128] = {false};
+bool noteActiveCh3[128] = {false};
+
+MIDI_CREATE_DEFAULT_INSTANCE(); // Tworzenie instancji MIDI
+
+void setup() {
+  // Inicjalizacja pinów wyjściowych
+  for (int i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+    pinMode(pins[i], OUTPUT);
+    digitalWrite(pins[i], LOW);
+  }
+
+  // Konfiguracja pinów enable jako wejścia z podciąganiem
+  pinMode(channel1_enable_pin, INPUT_PULLUP);
+  pinMode(channel2_enable_pin, INPUT_PULLUP);
+  pinMode(channel3_enable_pin, INPUT_PULLUP);
+
+  MIDI.begin(MIDI_CHANNEL_OMNI); // Odbieraj wiadomości ze wszystkich kanałów
+  MIDI.setHandleNoteOn(MyHandleNoteOn);     // Ustaw funkcję obsługi NoteOn
+  MIDI.setHandleNoteOff(MyHandleNoteOff);   // Ustaw funkcję obsługi NoteOff
+}
+
+void loop() {
+  MIDI.read();           // Odczyt danych MIDI
+  updateChannelState();  // Aktualizacja wyjść w zależności od zmian enable
+}
+
+// Obsługuje zmiany stanu pinów enable kanałów
+void updateChannelState() {
+  static bool lastChState[3] = {HIGH, HIGH, HIGH}; // Zapamiętanie poprzednich stanów pinów enable
+  int enablePins[3] = {channel1_enable_pin, channel2_enable_pin, channel3_enable_pin};
+  int transposes[3] = {CHANNEL1_TRANSPOSE, CHANNEL2_TRANSPOSE, CHANNEL3_TRANSPOSE};
+  bool* notesActive[3] = {noteActiveCh1, noteActiveCh2, noteActiveCh3};
+
+  for (int ch = 0; ch < 3; ++ch) {
+    bool current = digitalRead(enablePins[ch]);
+    if (current != lastChState[ch]) {
+      lastChState[ch] = current;
+      for (byte note = 36; note <= 127; ++note) {
+        int baseIndex = note - 36 + transposes[ch];
+        if (baseIndex >= 0 && baseIndex < (int)(sizeof(pins) / sizeof(pins[0])) && notesActive[ch][note]) {
+          int pin = pins[baseIndex];
+          if (current == LOW) {
+            pinUsage[pin]++;
+            digitalWrite(pin, HIGH);
+          } else {
+            if (pinUsage[pin] > 0) pinUsage[pin]--;
+            if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+          }
+        }
+      }
+    }
+  }
+}
+
+// Obsługa komunikatu NoteOn
+void MyHandleNoteOn(byte channel, byte pitch, byte velocity) {
+  if (pitch >= 128) return; // Sprawdzenie poprawności nuty
+
+  int index;
+
+  if (channel == decoder_channel) {
+    index = pitch - 36 + CHANNEL1_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh1[pitch] = true;
+      if (digitalRead(channel1_enable_pin) == LOW) {
+        int pin = pins[index];
+        pinUsage[pin]++;
+        digitalWrite(pin, HIGH);
+      }
+    }
+  }
+  else if (channel == decoder_channel2) {
+    index = pitch - 36 + CHANNEL2_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh2[pitch] = true;
+      if (digitalRead(channel2_enable_pin) == LOW) {
+        int pin = pins[index];
+        pinUsage[pin]++;
+        digitalWrite(pin, HIGH);
+      }
+    }
+  }
+  else if (channel == decoder_channel3) {
+    index = pitch - 36 + CHANNEL3_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh3[pitch] = true;
+      if (digitalRead(channel3_enable_pin) == LOW) {
+        int pin = pins[index];
+        pinUsage[pin]++;
+        digitalWrite(pin, HIGH);
+      }
+    }
+  }
+}
+
+// Obsługa komunikatu NoteOff
+void MyHandleNoteOff(byte channel, byte pitch, byte velocity) {
+  if (pitch >= 128) return;
+
+  int index;
+
+  if (channel == decoder_channel) {
+    index = pitch - 36 + CHANNEL1_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh1[pitch] = false;
+      int pin = pins[index];
+      if (pinUsage[pin] > 0) pinUsage[pin]--;
+      if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+    }
+  }
+  else if (channel == decoder_channel2) {
+    index = pitch - 36 + CHANNEL2_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh2[pitch] = false;
+      int pin = pins[index];
+      if (pinUsage[pin] > 0) pinUsage[pin]--;
+      if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+    }
+  }
+  else if (channel == decoder_channel3) {
+    index = pitch - 36 + CHANNEL3_TRANSPOSE;
+    if (index >= 0 && index < (int)(sizeof(pins) / sizeof(pins[0]))) {
+      noteActiveCh3[pitch] = false;
+      int pin = pins[index];
+      if (pinUsage[pin] > 0) pinUsage[pin]--;
+      if (pinUsage[pin] == 0) digitalWrite(pin, LOW);
+    }
+  }
+}
